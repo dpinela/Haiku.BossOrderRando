@@ -1,7 +1,11 @@
 using Bep = BepInEx;
 using MMDetour = MonoMod.RuntimeDetour;
 using Reflection = System.Reflection;
+using UE = UnityEngine;
 using USM = UnityEngine.SceneManagement;
+using static DG.Tweening.ShortcutExtensions;
+using static DG.Tweening.TweenSettingsExtensions;
+using Coll = System.Collections;
 
 namespace Haiku.BossOrderRando;
 
@@ -15,6 +19,13 @@ public class BossOrderRandoPlugin : Bep.BaseUnityPlugin
 
         //new MMDetour.Hook(typeof(BossRushVisuals).GetMethod("UpdateSelectedVisuals", Reflection.BindingFlags.Public | Reflection.BindingFlags.Instance), RandomizeBossOrder);
         On.EnterRoomTrigger.LoadNextLevel += RandomizeBossOrder;
+
+        var flags = Reflection.BindingFlags.NonPublic | Reflection.BindingFlags.Instance;
+
+        new MMDetour.Hook(typeof(SentientDefeated).GetMethod("BossRushEndingSequence", flags),
+            NonterminalTrioBossRushEndingSequence);
+        new MMDetour.Hook(typeof(UncorruptVirusDefeated).GetMethod("BossRushEndingSequence", flags),
+            NonterminalAtomBossRushEndingSequence);
     }
 
     private Settings? modSettings;
@@ -23,7 +34,7 @@ public class BossOrderRandoPlugin : Bep.BaseUnityPlugin
     private BossRushMode.BossScene[]? origOrderRing2;
     private BossRushMode.BossScene[]? origOrderRing3;
 
-    private System.Collections.IEnumerator RandomizeBossOrder(On.EnterRoomTrigger.orig_LoadNextLevel orig, EnterRoomTrigger self)
+    private Coll.IEnumerator RandomizeBossOrder(On.EnterRoomTrigger.orig_LoadNextLevel orig, EnterRoomTrigger self)
     {
         try
         {
@@ -93,4 +104,50 @@ public class BossOrderRandoPlugin : Bep.BaseUnityPlugin
             order[j] = x;
         }
     }
+
+    private Coll.IEnumerator NonterminalTrioBossRushEndingSequence(
+        System.Func<SentientDefeated, Coll.IEnumerator> orig, SentientDefeated self
+    )
+    {
+        if (IsEndingVanilla(origOrderRing2, BossRushMode.instance.ring2FightSequence))
+        {
+            return orig(self);
+        }
+        return self.BossRushShortEndingSequence();
+    }
+
+    private Coll.IEnumerator NonterminalAtomBossRushEndingSequence(
+        System.Func<UncorruptVirusDefeated, Coll.IEnumerator> orig, UncorruptVirusDefeated self
+    )
+    {
+        if (IsEndingVanilla(origOrderRing3, BossRushMode.instance.ring3FightSequence))
+        {
+            return orig(self);
+        }
+        return NonterminalAtomEnding(self);
+    }
+
+    private static Coll.IEnumerator NonterminalAtomEnding(UncorruptVirusDefeated self)
+    {
+        self.transform.DOMove(UE.Vector2.zero, 8).SetEase(DG.Tweening.Ease.InOutSine);
+        PlayerScript.instance.InvulnerableFor(10);
+        yield return new UE.WaitForSeconds(10);
+        self.whiteOverlay.enabled = true;
+        foreach (var p in self.particles)
+        {
+            p.SetActive(false);
+        }
+        self.infectedParticles.Play();
+        yield return new UE.WaitForSeconds(.08f);
+        self.whiteOverlay.enabled = false;
+        self.StartCoroutine(self.CreatorDropsDead());
+        yield return new UE.WaitForSeconds(5.5f);
+        GameManager.instance.canAttack = true;
+        BossRushMode.instance.NextFight();
+    }
+
+    private static bool IsEndingVanilla(BossRushMode.BossScene[]? orig, BossRushMode.BossScene[] actual) =>
+        orig == null || orig[orig.Length - 1].sceneIndex == actual[actual.Length - 1].sceneIndex;
+
+    private static T Last<T>(T[] xs) => xs[xs.Length - 1];
 }

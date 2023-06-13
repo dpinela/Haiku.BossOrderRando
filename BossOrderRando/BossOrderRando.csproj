@@ -87,5 +87,8 @@
     <Reference Include="UnityEngine.UIModule">
       <HintPath>..\lib\Game\UnityEngine.UIModule.dll</HintPath>
     </Reference>
+    <Reference Include="DOTween">
+      <HintPath>..\lib\Game\DOTween.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>
