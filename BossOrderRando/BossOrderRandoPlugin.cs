@@ -5,10 +5,7 @@ using Cil = Mono.Cecil.Cil;
 using static MonoMod.Cil.ILPatternMatchingExt;
 using static MonoMod.Utils.Extensions;
 using Reflection = System.Reflection;
-using UE = UnityEngine;
 using USM = UnityEngine.SceneManagement;
-using static DG.Tweening.ShortcutExtensions;
-using static DG.Tweening.TweenSettingsExtensions;
 using Coll = System.Collections;
 
 namespace Haiku.BossOrderRando;
@@ -82,7 +79,7 @@ public class BossOrderRandoPlugin : Bep.BaseUnityPlugin
                         self.levelToLoad = brm.ring3FightSequence[0].sceneIndex;
                         break;
                     default:
-                        Logger.LogWarning($"unknown boss rush ring {ring} starting; not randomizing");
+                        Logger.LogInfo($"unknown boss rush ring {ring} starting; not randomizing");
                         break;
                 }
             }
