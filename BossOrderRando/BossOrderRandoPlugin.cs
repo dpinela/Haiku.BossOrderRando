@@ -1,5 +1,9 @@
 using Bep = BepInEx;
 using MMDetour = MonoMod.RuntimeDetour;
+using MMCil = MonoMod.Cil;
+using Cil = Mono.Cecil.Cil;
+using static MonoMod.Cil.ILPatternMatchingExt;
+using static MonoMod.Utils.Extensions;
 using Reflection = System.Reflection;
 using UE = UnityEngine;
 using USM = UnityEngine.SceneManagement;
@@ -21,11 +25,18 @@ public class BossOrderRandoPlugin : Bep.BaseUnityPlugin
         On.EnterRoomTrigger.LoadNextLevel += RandomizeBossOrder;
 
         var flags = Reflection.BindingFlags.NonPublic | Reflection.BindingFlags.Instance;
+        var pubflags = Reflection.BindingFlags.Public | Reflection.BindingFlags.Instance;
 
         new MMDetour.Hook(typeof(SentientDefeated).GetMethod("BossRushEndingSequence", flags),
             NonterminalTrioBossRushEndingSequence);
         new MMDetour.Hook(typeof(UncorruptVirusDefeated).GetMethod("BossRushEndingSequence", flags),
             NonterminalAtomBossRushEndingSequence);
+        new MMDetour.ILHook(typeof(UncorruptVirusBoss).GetMethod("TakeDamage", pubflags), NonterminalAtomIframes);
+        new MMDetour.ILHook(typeof(UncorruptVirusBoss).GetMethod("TakeNonSwordDamage", pubflags), NonterminalAtomIframes);
+        new MMDetour.ILHook(System.Type.GetType("ReactorCoreDeath+<DeathSequence>d__15, Assembly-CSharp").GetMethod("MoveNext", flags), NonterminalElegyEnding);
+        new MMDetour.ILHook(typeof(TheVirus).GetMethod("TakeNonSwordDamage", pubflags), NonterminalAtomIframes);
+        IL.TheVirus.TakeDamage += NonterminalAtomIframes;
+        IL.FightManager.CheckForDefeatAnimation += NonterminalAtomIframes;
     }
 
     private Settings? modSettings;
@@ -129,6 +140,7 @@ public class BossOrderRandoPlugin : Bep.BaseUnityPlugin
 
     private static Coll.IEnumerator NonterminalAtomEnding(UncorruptVirusDefeated self)
     {
+        // The original sequence minus everything relating to 
         self.transform.DOMove(UE.Vector2.zero, 8).SetEase(DG.Tweening.Ease.InOutSine);
         PlayerScript.instance.InvulnerableFor(10);
         yield return new UE.WaitForSeconds(10);
@@ -146,8 +158,70 @@ public class BossOrderRandoPlugin : Bep.BaseUnityPlugin
         BossRushMode.instance.NextFight();
     }
 
+    private void NonterminalAtomIframes(MMCil.ILContext il)
+    {
+        var c = new MMCil.ILCursor(il);
+        c.GotoNext(
+            MMCil.MoveType.Before,
+            i => i.MatchLdcR4(60),
+            i => i.MatchCallvirt(typeof(PlayerScript), "InvulnerableFor"));
+        c.Index++;
+        c.EmitDelegate((System.Func<float, float>)
+            (orig => IsEndingOfCurrentRingVanilla() ? orig : 10));
+    }
+
+    private void NonterminalElegyEnding(MMCil.ILContext il)
+    {
+        // Skip the part of this method that disables the music if in a boss rush and not the last
+        // boss.
+        var c = new MMCil.ILCursor(il);
+        c.GotoNext(MMCil.MoveType.Before, 
+            i => i.MatchLdsfld(typeof(SoundManager), "instance"),
+            i => i.MatchLdcR4(3),
+            i => i.MatchCallvirt(typeof(SoundManager), "DisableBossMusic"));
+        var label = c.DefineLabel();
+        c.EmitDelegate((System.Func<bool>)ShouldSoundEndAfterElegy);
+        c.Emit(Cil.OpCodes.Brfalse, label);
+        c.GotoNext(MMCil.MoveType.After,
+            i => i.MatchCallvirt(typeof(SoundManager), "DisableAllFiveLayers"));
+        c.MarkLabel(label);
+    }
+
     private static bool IsEndingVanilla(BossRushMode.BossScene[]? orig, BossRushMode.BossScene[] actual) =>
         orig == null || orig[orig.Length - 1].sceneIndex == actual[actual.Length - 1].sceneIndex;
+
+    private bool IsEndingOfCurrentRingVanilla()
+    {
+        var brm = BossRushMode.instance;
+        if (!brm.bossRushIsActive)
+        {
+            return true;
+        }
+        return brm.GetRing() switch
+        {
+            1 => IsEndingVanilla(origOrderRing1, brm.ring1FightSequence),
+            2 => IsEndingVanilla(origOrderRing2, brm.ring2FightSequence),
+            3 => IsEndingVanilla(origOrderRing3, brm.ring3FightSequence),
+            _ => true
+        };
+    }
+
+    private const int ElegyBRRoom = 268;
+
+    private static bool ShouldSoundEndAfterElegy()
+    {
+        var brm = BossRushMode.instance;
+        if (!brm.bossRushIsActive)
+        {
+            return true;
+        }
+        return brm.GetRing() switch
+        {
+            1 => Last(brm.ring1FightSequence).sceneIndex == ElegyBRRoom,
+            3 => Last(brm.ring3FightSequence).sceneIndex == ElegyBRRoom,
+            _ => true
+        };
+    }
 
     private static T Last<T>(T[] xs) => xs[xs.Length - 1];
 }
