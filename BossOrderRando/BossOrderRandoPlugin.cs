@@ -21,7 +21,6 @@ public class BossOrderRandoPlugin : Bep.BaseUnityPlugin
     {
         modSettings = new(Config);
 
-        //new MMDetour.Hook(typeof(BossRushVisuals).GetMethod("UpdateSelectedVisuals", Reflection.BindingFlags.Public | Reflection.BindingFlags.Instance), RandomizeBossOrder);
         On.EnterRoomTrigger.LoadNextLevel += RandomizeBossOrder;
 
         var flags = Reflection.BindingFlags.NonPublic | Reflection.BindingFlags.Instance;
@@ -49,39 +48,67 @@ public class BossOrderRandoPlugin : Bep.BaseUnityPlugin
     {
         try
         {
-            if (!(modSettings!.Enable.Value && USM.SceneManager.GetActiveScene().buildIndex == 249))
+            if (USM.SceneManager.GetActiveScene().buildIndex != 249)
             {
                 return orig(self);
             }
 
-            var seed = modSettings!.Seed.Value;
-            if (seed == "")
-            {
-                seed = System.DateTime.Now.Ticks.ToString();
-            }
             var brm = BossRushMode.instance;
             var ring = brm.GetRing();
-            Logger.LogInfo($"randomizing boss rush order of ring {ring} with seed {seed}");
-            switch (ring)
+            if (modSettings!.Enable.Value)
             {
-                case 1:
-                    RestoreOriginalOrder(ref origOrderRing1, brm.ring1FightSequence);
-                    ShuffleBosses(brm.ring1FightSequence, seed);
-                    self.levelToLoad = brm.ring1FightSequence[0].sceneIndex;
-                    break;
-                case 2:
-                    RestoreOriginalOrder(ref origOrderRing2, brm.ring2FightSequence);
-                    ShuffleBosses(brm.ring2FightSequence, seed);
-                    self.levelToLoad = brm.ring2FightSequence[0].sceneIndex;
-                    break;
-                case 3:
-                    RestoreOriginalOrder(ref origOrderRing3, brm.ring3FightSequence);
-                    ShuffleBosses(brm.ring3FightSequence, seed);
-                    self.levelToLoad = brm.ring3FightSequence[0].sceneIndex;
-                    break;
-                default:
-                    Logger.LogWarning($"unknown boss rush ring {ring} starting; not randomizing");
-                    break;
+                var seed = modSettings!.Seed.Value;
+                if (seed == "")
+                {
+                    seed = System.DateTime.Now.Ticks.ToString();
+                }
+                
+                Logger.LogInfo($"randomizing boss rush order of ring {ring} with seed {seed}");
+                switch (ring)
+                {
+                    case 1:
+                        RestoreOriginalOrder(ref origOrderRing1, brm.ring1FightSequence);
+                        ShuffleBosses(brm.ring1FightSequence, seed);
+                        self.levelToLoad = brm.ring1FightSequence[0].sceneIndex;
+                        break;
+                    case 2:
+                        RestoreOriginalOrder(ref origOrderRing2, brm.ring2FightSequence);
+                        ShuffleBosses(brm.ring2FightSequence, seed);
+                        self.levelToLoad = brm.ring2FightSequence[0].sceneIndex;
+                        break;
+                    case 3:
+                        RestoreOriginalOrder(ref origOrderRing3, brm.ring3FightSequence);
+                        ShuffleBosses(brm.ring3FightSequence, seed);
+                        self.levelToLoad = brm.ring3FightSequence[0].sceneIndex;
+                        break;
+                    default:
+                        Logger.LogWarning($"unknown boss rush ring {ring} starting; not randomizing");
+                        break;
+                }
+            }
+            else
+            {
+                // If we are disabled, we must at least undo the changes we made to the fight
+                // sequence.
+                switch (ring)
+                {
+                    case 1:
+                        RestoreOriginalOrder(ref origOrderRing1, brm.ring1FightSequence);
+                        self.levelToLoad = brm.ring1FightSequence[0].sceneIndex;
+                        break;
+                    case 2:
+                        RestoreOriginalOrder(ref origOrderRing2, brm.ring2FightSequence);
+                        self.levelToLoad = brm.ring2FightSequence[0].sceneIndex;
+                        break;
+                    case 3:
+                        RestoreOriginalOrder(ref origOrderRing3, brm.ring3FightSequence);
+                        self.levelToLoad = brm.ring3FightSequence[0].sceneIndex;
+                        break;
+                    default:
+                        // we don't modify any other trials (which don't exist anyway)
+                        // so we don't have to do anything
+                        break;
+                }
             }
         }
         catch (System.Exception err)
