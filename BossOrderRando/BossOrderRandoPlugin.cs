@@ -29,7 +29,7 @@ public class BossOrderRandoPlugin : Bep.BaseUnityPlugin
 
         new MMDetour.Hook(typeof(SentientDefeated).GetMethod("BossRushEndingSequence", flags),
             NonterminalTrioBossRushEndingSequence);
-        new MMDetour.Hook(typeof(UncorruptVirusDefeated).GetMethod("BossRushEndingSequence", flags),
+        new MMDetour.ILHook(System.Type.GetType("UncorruptVirusDefeated+<BossRushEndingSequence>d__21, Assembly-CSharp").GetMethod("MoveNext", flags),
             NonterminalAtomBossRushEndingSequence);
         new MMDetour.ILHook(typeof(UncorruptVirusBoss).GetMethod("TakeDamage", pubflags), NonterminalAtomIframes);
         new MMDetour.ILHook(typeof(UncorruptVirusBoss).GetMethod("TakeNonSwordDamage", pubflags), NonterminalAtomIframes);
@@ -127,35 +127,35 @@ public class BossOrderRandoPlugin : Bep.BaseUnityPlugin
         return self.BossRushShortEndingSequence();
     }
 
-    private Coll.IEnumerator NonterminalAtomBossRushEndingSequence(
-        System.Func<UncorruptVirusDefeated, Coll.IEnumerator> orig, UncorruptVirusDefeated self
-    )
+    private void NonterminalAtomBossRushEndingSequence(MMCil.ILContext il)
     {
-        if (IsEndingVanilla(origOrderRing3, BossRushMode.instance.ring3FightSequence))
-        {
-            return orig(self);
-        }
-        return NonterminalAtomEnding(self);
-    }
+        System.Func<bool> IsTerminal = () => IsEndingVanilla(origOrderRing3, BossRushMode.instance.ring3FightSequence);
 
-    private static Coll.IEnumerator NonterminalAtomEnding(UncorruptVirusDefeated self)
-    {
-        // The original sequence minus everything relating to 
-        self.transform.DOMove(UE.Vector2.zero, 8).SetEase(DG.Tweening.Ease.InOutSine);
-        PlayerScript.instance.InvulnerableFor(10);
-        yield return new UE.WaitForSeconds(10);
-        self.whiteOverlay.enabled = true;
-        foreach (var p in self.particles)
-        {
-            p.SetActive(false);
-        }
-        self.infectedParticles.Play();
-        yield return new UE.WaitForSeconds(.08f);
-        self.whiteOverlay.enabled = false;
-        self.StartCoroutine(self.CreatorDropsDead());
-        yield return new UE.WaitForSeconds(5.5f);
-        GameManager.instance.canAttack = true;
-        BossRushMode.instance.NextFight();
+        var c = new MMCil.ILCursor(il);
+
+        // skip over calls to DisableBossMusic and ChangeBackgroundMusic
+        c.GotoNext(MMCil.MoveType.Before, i => i.MatchLdsfld(typeof(SoundManager), "instance"));
+        c.EmitDelegate(IsTerminal);
+        var label = c.DefineLabel();
+        c.Emit(Cil.OpCodes.Brfalse, label);
+        c.GotoNext(MMCil.MoveType.After, i => i.MatchCallvirt(typeof(SoundManager), "ChangeBackgroundMusic"));
+        c.MarkLabel(label);
+
+        // skip over calls to DisableAllFiveLayers and StopLowHealth
+        c.GotoNext(MMCil.MoveType.Before, i => i.MatchLdsfld(typeof(SoundManager), "instance"));
+        c.EmitDelegate(IsTerminal);
+        label = c.DefineLabel();
+        c.Emit(Cil.OpCodes.Brfalse, label);
+        c.GotoNext(MMCil.MoveType.After, i => i.MatchCallvirt(typeof(SoundManager), "StopLowHealth"));
+        c.MarkLabel(label);
+
+        // skip over call to ShowUICanvas
+        c.GotoNext(MMCil.MoveType.Before, i => i.MatchLdsfld(typeof(CameraBehavior), "instance"));
+        c.EmitDelegate(IsTerminal);
+        label = c.DefineLabel();
+        c.Emit(Cil.OpCodes.Brfalse, label);
+        c.GotoNext(MMCil.MoveType.After, i => i.MatchCallvirt(typeof(CameraBehavior), "ShowUICanvas"));
+        c.MarkLabel(label);
     }
 
     private void NonterminalAtomIframes(MMCil.ILContext il)
